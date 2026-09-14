@@ -6,29 +6,33 @@ else to root-level `YYYY/MM/` folders, renames files with a date prefix,
 deduplicates, and cleans up empty folders.
 
 Run this **once** on a large unorganised archive. For ongoing imports of new
-photos use [`sort_photos.py`](sort_photos.md) instead.
+photos use [`sort_photos.py`](sort_photos.md) instead. Prefer a GUI? See
+[`GUI.md`](GUI.md) — the "Sort From Scratch" screen is this same workflow
+with a folder picker instead of these flags.
+
+This script is a thin CLI wrapper — all the actual logic lives in
+`photo_organizer/engine/organize_pipeline.py`, shared with the desktop app.
 
 ---
 
 ## Usage
 
 ```bash
-# Always dry-run first — no files are moved or deleted
-python organize_v2.py
+# --root is required. Always dry-run first (the default) — no files are moved or deleted
+python organize_v2.py --root E:\Photos
 
-# Live run — files are moved
-python organize_v2.py --run
+# Live run — files are moved / RAF files are deleted
+python organize_v2.py --root E:\Photos --run
+
+# Optional: override where the report is written (default: ROOT\organize_v2_report.txt)
+python organize_v2.py --root E:\Photos --report E:\Photos\reports\run1.txt
 ```
 
-The root folder is hardcoded inside the script:
-
-```python
-ROOT      = Path("E:/Crucial/BlueOcean")   # ← change to your path
-FUJI_ROOT = ROOT / "Fuji"
-REVIEW    = ROOT / "review"
-```
-
-Edit these three lines before running.
+`ROOT` used to be hardcoded inside the script (`E:/Crucial/BlueOcean`) —
+it's now a required `--root` argument. `Fuji` and `review` are still fixed
+relative to the root (`ROOT\Fuji`, `ROOT\review`) — not independently
+configurable from the CLI or the GUI, to keep this a single-root, self-contained
+workflow.
 
 ---
 
@@ -90,27 +94,23 @@ is removed. `ROOT/review/` is preserved even if empty.
 
 ## Output
 
+Console output uses the same live progress bars / step headers as
+`sort_photos.py` (see [its progress display docs](sort_photos.md#progress-display)
+for the TTY vs. pipe behavior), ending in a summary:
+
 ```
 ============================================================
-Organize v2 — DRY RUN
-============================================================
-
-RAF files found   : 1364
-Photo/video files : 89421
-RAF deleted       : 1364
-  2000/89421 processed...
-  4000/89421 processed...
-  …
-
-============================================================
-SUMMARY
+SUMMARY  —  DRY RUN
 ============================================================
 RAF deleted          : 1364 (0 failed)
 Fuji files moved     : 6992  (fallback: 0, dups: 0)
 Other files moved    : 81013  (fallback: 37, dups: 1412)
+Flagged dates        : 2
 Empty dirs removed   : 595
 Errors               : 4
 Report saved to      : ROOT/organize_v2_report.txt
+
+Run with --run to execute for real.
 ```
 
 A full plain-text report is saved to `ROOT/organize_v2_report.txt`.
@@ -122,10 +122,17 @@ A full plain-text report is saved to `ROOT/organize_v2_report.txt`.
 | Section | Contents |
 |---|---|
 | **RAF DELETION** | Every deleted `.RAF` path; any failures |
-| **FUJIFILM FILES → /Fuji/** | Count, fallback-date files, duplicates sent to `/review/` |
+| **FUJIFILM FILES → /Fuji/** | Count, fallback-date files, duplicates sent to `/review/` (correctly attributed to Fuji vs. non-Fuji — see note below) |
 | **ALL OTHER FILES → /YYYY/MM/** | Count, fallback-date files, duplicates |
+| **FLAGGED DATES** | Files whose filename-parsed date looks implausible (e.g. far in the future) — see [Flagged / suspicious dates](#flagged--suspicious-dates) |
 | **EMPTY FOLDER CLEANUP** | Every folder removed |
 | **ERRORS** | Files that could not be processed + reason |
+
+> **Note:** an earlier version of this script always logged duplicates under
+> the "other" bucket even when the duplicate was a Fuji file, because it
+> checked the camera make *after* the duplicate-hash check instead of
+> before. This has been fixed — duplicate counts in the Fuji vs. other
+> sections are now accurate.
 
 ---
 
@@ -142,6 +149,26 @@ Files using filesystem fallback are listed separately so you can review them.
 
 ---
 
+## Flagged / suspicious dates
+
+Filename-parsed dates (`YYYYMMDD` / `YYYY-MM-DD` patterns) can produce
+implausible results — most commonly filenames like `Snapchat-2080090122.mp4`,
+where the regex grabs the first 8-digit run and produces a far-future date
+(year 2080 in that example). These files are still routed and renamed using
+that parsed date (they land in `2080/09/`, etc.) — nothing is dropped or
+blocked — but they're now called out explicitly:
+
+- Listed in their own **FLAGGED DATES** section in the text report
+- Counted separately in the console summary (`Flagged dates: N`)
+- Surfaced live in the desktop app's progress log and post-run summary
+
+A date is flagged when it comes from the filename (not EXIF or filesystem)
+and is more than a day in the future. Review flagged files and move them to
+the correct `YYYY/MM/` folder by hand if needed — the script won't do this
+automatically since it can't tell what the *correct* date should be.
+
+---
+
 ## Known limitations
 
 - **Windows MAX_PATH (260 chars)** — files with very long paths (deep
@@ -152,7 +179,8 @@ Files using filesystem fallback are listed separately so you can review them.
 - **Anomalous years** — filenames like `Snapchat-2080090122.mp4` can produce
   far-future dates (2080, 2065) because the script parses the first valid
   `YYYYMMDD` it finds. These files land in `2080/09/` etc. and can be
-  manually corrected.
+  manually corrected. As of this version they're flagged (see above) instead
+  of being silently indistinguishable from correctly-dated files.
 
 ---
 
@@ -162,7 +190,7 @@ Files using filesystem fallback are listed separately so you can review them.
 pip install exifread pillow
 ```
 
-Python 3.10+ required (uses the walrus operator `:=` in MD5 reading).
+Python 3.10+ required. Or use the GUI instead — see [`GUI.md`](GUI.md).
 
 ---
 
@@ -174,6 +202,6 @@ Python 3.10+ required (uses the walrus operator `:=` in MD5 reading).
 | **Source** | Entire ROOT tree (recursive) | Single flat folder |
 | **Destination** | Sets up ROOT/Fuji + ROOT/YYYY | Uses pre-existing destinations |
 | **Duplicate check** | MD5 of everything upfront | Size-first, MD5 only on collision |
-| **Progress** | Console count every 2 000 files | Animated bar (TTY) / milestones (pipe) |
+| **Progress** | Same live progress bar / step headers as `sort_photos.py` | Animated bar (TTY) / milestones (pipe) |
 | **Empty folder cleanup** | Included (Step 8) | Not included |
 | **RAF deletion** | Included | Included |

@@ -2,7 +2,12 @@
 
 Sort new, unsorted photos from a flat **source** folder into two
 organised destinations — one for Fujifilm files, one for everything else.
-Designed for regular use after each camera import.
+Designed for regular use after each camera import. Prefer a GUI? See
+[`GUI.md`](GUI.md) — the "Sort New Photos" screen is this same workflow
+with folder pickers instead of these flags.
+
+This script is a thin CLI wrapper — all the actual logic lives in
+`photo_organizer/engine/sort_pipeline.py`, shared with the desktop app.
 
 ---
 
@@ -101,6 +106,25 @@ as errors.
 
 In `--dry-run` mode this step notes that files remain as expected (nothing was
 moved).
+
+---
+
+## Flagged / suspicious dates
+
+A filename-parsed date (`YYYYMMDD` / `YYYY-MM-DD` pattern) that lands more
+than a day in the future is flagged rather than treated the same as any
+other date — the classic case is a filename like `Snapchat-2080090122.mp4`,
+where the regex grabs the first 8-digit run and produces a bogus year-2080
+date. The file is still routed and renamed using that date (nothing is
+blocked), but it's called out:
+
+- Listed in its own **FLAGGED DATES** section in the report file
+- Counted separately in the summary (`Flagged dates: N`)
+- Shown live in the desktop app's progress log and post-run summary
+
+EXIF dates and the filesystem-fallback date are never flagged this way —
+only filename-parsed dates, since that's the only source prone to this kind
+of misparse.
 
 ---
 
@@ -233,6 +257,7 @@ interpreted as a newline in captured stdout.
     ↳ new subfolders:              1
   ----------------------------------------------------------------
   Duplicates → /review/:           1
+  Flagged dates:                   0
   Errors:                          0
 
   Re-run without --dry-run to apply changes.
@@ -250,6 +275,7 @@ path) after every run. It contains:
 - Every Fuji file moved (source → destination)
 - Every other file moved (source → destination)
 - Files that used filesystem date fallback
+- Files with a flagged (implausible) filename-parsed date
 - Duplicates with the path of the existing matched file
 - Source verification result
 - All errors
@@ -280,3 +306,5 @@ pip install exifread pillow
 |---|---|---|
 | `exifread` | Read DateTimeOriginal + Make from EXIF | Date from filename / filesystem |
 | `pillow` | JPEG EXIF fallback (tag IDs 36867, 271) | Skipped silently |
+
+Or use the GUI instead — see [`GUI.md`](GUI.md).

@@ -1,0 +1,19 @@
+[project]
+name = "photo-organizer"
+version = "0.1.0"
+description = "Desktop app for organizing a photo/video library by EXIF metadata and date"
+requires-python = ">=3.10"
+dependencies = [
+    "exifread",
+    "pillow",
+    "PySide6",
+    "PySide6-Fluent-Widgets[full]",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller"]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["photo_organizer/tests"]
